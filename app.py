@@ -531,55 +531,146 @@ def generate_resumes_page():
     selected_job_id = job_options[selected_job_name]
 
     if st.button("Generate Resume", type="primary"):
-        generate_resume(selected_job_id)
+        # Store job_id in session state and trigger generation
+        st.session_state.generating_for_job = selected_job_id
+        st.session_state.generation_stage = 'generating'
+        st.rerun()
+
+    # Show review/edit interface if we're in the generation process
+    if 'generation_stage' in st.session_state and st.session_state.generation_stage in ['review', 'finalizing']:
+        show_review_interface()
 
 
-def generate_resume(job_id: int):
-    """Generate resume for specific job"""
-    with st.spinner("Generating your customized resume..."):
+def show_review_interface():
+    """Show interface for reviewing and editing AI-generated bullets"""
+    if st.session_state.generation_stage == 'generating':
+        # First time - generate the bullets
+        with st.spinner("Generating your customized resume bullets..."):
+            generate_initial_bullets()
+        st.session_state.generation_stage = 'review'
+        st.rerun()
+
+    elif st.session_state.generation_stage == 'review':
+        st.markdown("---")
+        st.subheader("📝 Review & Edit Your Resume")
+        st.info("Review the AI-generated bullets below. You can edit any bullet before creating the final PDF.")
+
+        # Get stored data
+        job = db.get_target_job(st.session_state.generating_for_job)
+        experiences = db.get_work_experiences(st.session_state.user_id)
+        generated_bullets = st.session_state.generated_bullets
+
+        st.write(f"**Target Job:** {job['company_name']} - {job['job_title']}")
+        st.markdown("---")
+
+        # Create editable fields for each experience's bullets
+        edited_bullets = {}
+        for exp in experiences:
+            if exp['id'] in generated_bullets:
+                st.subheader(f"{exp['company_name']} - {exp['job_title']}")
+
+                bullets_for_exp = []
+                for i, bullet in enumerate(generated_bullets[exp['id']]):
+                    edited_bullet = st.text_area(
+                        f"Bullet {i+1}",
+                        value=bullet,
+                        height=80,
+                        key=f"edit_bullet_{exp['id']}_{i}"
+                    )
+                    bullets_for_exp.append(edited_bullet)
+
+                edited_bullets[exp['id']] = bullets_for_exp
+                st.markdown("---")
+
+        # Store edited bullets in session state
+        st.session_state.edited_bullets = edited_bullets
+
+        # Action buttons
+        col1, col2, col3 = st.columns([1, 1, 2])
+
+        with col1:
+            if st.button("✅ Create PDF", type="primary"):
+                st.session_state.generation_stage = 'finalizing'
+                st.rerun()
+
+        with col2:
+            if st.button("❌ Cancel"):
+                # Clear generation state
+                if 'generating_for_job' in st.session_state:
+                    del st.session_state.generating_for_job
+                if 'generation_stage' in st.session_state:
+                    del st.session_state.generation_stage
+                if 'generated_bullets' in st.session_state:
+                    del st.session_state.generated_bullets
+                if 'edited_bullets' in st.session_state:
+                    del st.session_state.edited_bullets
+                st.rerun()
+
+    elif st.session_state.generation_stage == 'finalizing':
+        # Create the final PDF with edited bullets
+        finalize_resume()
+
+
+def generate_initial_bullets():
+    """Generate initial bullets using AI"""
+    job_id = st.session_state.generating_for_job
+
+    # Get job details
+    job = db.get_target_job(job_id)
+
+    if not job['job_description']:
+        st.error("Job description is missing. Please add it in Manage Target Jobs.")
+        st.session_state.generation_stage = None
+        return
+
+    # Get user profile and experiences
+    experiences = db.get_work_experiences(st.session_state.user_id)
+
+    # Build bullet bank
+    bullet_bank = {}
+    for exp in experiences:
+        bullets = db.get_bullets(exp['id'])
+        bullet_bank[exp['id']] = {
+            'company': exp['company_name'],
+            'title': exp['job_title'],
+            'bullets': [b['bullet_text'] for b in bullets]
+        }
+
+    # Initialize AI processor
+    optimizer = ResumeOptimizer(config.ANTHROPIC_API_KEY)
+
+    # Generate bullets for each experience
+    generated_bullets = {}
+    for exp_id, exp_data in bullet_bank.items():
+        # Use AI to select and tailor bullets
+        selected_bullets = optimizer.generate_bullets(
+            job_description=job['job_description'],
+            experience_bullets=exp_data['bullets'],
+            target_count=5,
+            context=f"Position: {exp_data['title']} at {exp_data['company']}"
+        )
+        generated_bullets[exp_id] = selected_bullets
+
+    # Store in session state
+    st.session_state.generated_bullets = generated_bullets
+
+
+def finalize_resume():
+    """Create final PDF with edited bullets"""
+    with st.spinner("Creating your resume PDF..."):
         try:
+            job_id = st.session_state.generating_for_job
+            edited_bullets = st.session_state.edited_bullets
+
             # Get job details
             job = db.get_target_job(job_id)
-
-            if not job['job_description']:
-                st.error("Job description is missing. Please add it in Manage Target Jobs.")
-                return
 
             # Get user profile and experiences
             profile = db.get_profile(st.session_state.user_id)
             experiences = db.get_work_experiences(st.session_state.user_id)
 
-            # Build bullet bank
-            bullet_bank = {}
-            for exp in experiences:
-                bullets = db.get_bullets(exp['id'])
-                bullet_bank[exp['id']] = {
-                    'company': exp['company_name'],
-                    'title': exp['job_title'],
-                    'dates': f"{exp['start_date']} - {exp['end_date'] if exp['end_date'] else 'Present'}",
-                    'bullets': [b['bullet_text'] for b in bullets]
-                }
-
-            # Initialize AI processor
-            optimizer = ResumeOptimizer(config.ANTHROPIC_API_KEY)
-
-            # Generate bullets for each experience
-            generated_bullets = {}
-            for exp_id, exp_data in bullet_bank.items():
-                st.write(f"Generating bullets for {exp_data['company']}...")
-
-                # Use AI to select and tailor bullets
-                selected_bullets = optimizer.generate_bullets(
-                    job_description=job['job_description'],
-                    experience_bullets=exp_data['bullets'],
-                    target_count=5,
-                    context=f"Position: {exp_data['title']} at {exp_data['company']}"
-                )
-
-                generated_bullets[exp_id] = selected_bullets
-
-            # Create custom HTML with user's profile
-            html_content = build_resume_html(profile, experiences, generated_bullets)
+            # Create custom HTML with user's profile and edited bullets
+            html_content = build_resume_html(profile, experiences, edited_bullets)
 
             # Save HTML
             output_filename = generate_output_filename(job['company_name'])
@@ -621,7 +712,7 @@ def generate_resume(job_id: int):
                 db.save_generated_resume(
                     st.session_state.user_id,
                     job_id,
-                    json.dumps(generated_bullets),
+                    json.dumps(edited_bullets),
                     html_content,
                     output_filename
                 )
@@ -629,7 +720,7 @@ def generate_resume(job_id: int):
                 # Increment resume count
                 db.increment_resume_count(st.session_state.user_id)
 
-                st.success("Resume generated successfully!")
+                st.success("✅ Resume generated successfully!")
 
                 # Offer download
                 with open(pdf_path, 'rb') as f:
@@ -640,6 +731,17 @@ def generate_resume(job_id: int):
                         mime="application/pdf",
                         type="primary"
                     )
+
+                # Clear generation state after successful download button shown
+                if 'generating_for_job' in st.session_state:
+                    del st.session_state.generating_for_job
+                if 'generation_stage' in st.session_state:
+                    del st.session_state.generation_stage
+                if 'generated_bullets' in st.session_state:
+                    del st.session_state.generated_bullets
+                if 'edited_bullets' in st.session_state:
+                    del st.session_state.edited_bullets
+
             else:
                 st.error("Failed to generate PDF. Please check the logs.")
 
