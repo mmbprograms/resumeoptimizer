@@ -650,63 +650,132 @@ def generate_resume(job_id: int):
 
 
 def build_resume_html(profile, experiences, generated_bullets):
-    """Build complete HTML resume"""
-    # This is a simplified version - you can customize the template
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
-            h1 {{ text-align: center; margin-bottom: 5px; }}
-            .contact {{ text-align: center; margin-bottom: 20px; font-size: 14px; }}
-            h2 {{ border-bottom: 2px solid #333; padding-bottom: 5px; margin-top: 20px; }}
-            .job {{ margin-bottom: 15px; }}
-            .job-header {{ display: flex; justify-content: space-between; font-weight: bold; }}
-            ul {{ margin: 5px 0; padding-left: 20px; }}
-            li {{ margin: 3px 0; }}
-        </style>
-    </head>
-    <body>
-        <h1>{profile['full_name'] or 'Your Name'}</h1>
-        <div class="contact">
-            {profile['email'] or ''} | {profile['phone'] or ''} | {profile['linkedin_url'] or ''} | {profile['location'] or ''}
-        </div>
+    """Build complete HTML resume with professional formatting"""
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            line-height: 1.4;
+            color: #333;
+        }}
 
-        <h2>Education</h2>
-    """
+        /* Name - Largest */
+        h1 {{
+            text-align: center;
+            margin: 0 0 8px 0;
+            font-size: 24px;
+            font-weight: bold;
+        }}
 
-    # Add education
-    for edu in profile.get('education', []):
-        html += f"<p><strong>{edu['degree']}</strong> - {edu['school']} ({edu['year']})</p>"
+        /* Contact info - Medium (same as section headers) */
+        .contact {{
+            text-align: center;
+            margin: 0 0 20px 0;
+            font-size: 12px;
+            line-height: 1.3;
+        }}
 
-    # Add experience
-    html += "<h2>Professional Experience</h2>"
+        /* Section headers - Medium */
+        h2 {{
+            font-size: 12px;
+            font-weight: bold;
+            border-bottom: 1px solid #333;
+            padding-bottom: 3px;
+            margin: 16px 0 8px 0;
+            text-transform: uppercase;
+        }}
 
+        /* Job section */
+        .job {{
+            margin-bottom: 12px;
+        }}
+
+        /* Company name - bold, small text */
+        .company {{
+            font-weight: bold;
+            font-size: 11px;
+            margin: 0 0 2px 0;
+            line-height: 1.2;
+        }}
+
+        /* Job title - small text */
+        .title {{
+            font-size: 11px;
+            margin: 0 0 2px 0;
+            line-height: 1.2;
+        }}
+
+        /* Dates - small text, italic */
+        .dates {{
+            font-size: 11px;
+            font-style: italic;
+            margin: 0 0 4px 0;
+            line-height: 1.2;
+        }}
+
+        /* Bullets - Small text */
+        ul {{
+            margin: 0 0 0 0;
+            padding-left: 18px;
+        }}
+
+        li {{
+            font-size: 11px;
+            margin: 0 0 3px 0;
+            line-height: 1.3;
+        }}
+
+        /* Education and Skills content - Small text */
+        .content {{
+            font-size: 11px;
+            margin: 4px 0;
+            line-height: 1.3;
+        }}
+
+        .edu-item {{
+            margin: 4px 0;
+        }}
+    </style>
+</head>
+<body>
+    <h1>{profile['full_name'] or 'Your Name'}</h1>
+    <div class="contact">
+        {profile['email'] or ''} | {profile['phone'] or ''} | {profile['linkedin_url'] or ''} | {profile['location'] or ''}
+    </div>
+
+    <h2>Professional Experience</h2>
+"""
+
+    # Add experience (now comes first)
     for exp in experiences:
         bullets_html = ""
         if exp['id'] in generated_bullets:
             for bullet in generated_bullets[exp['id']]:
-                bullets_html += f"<li>{bullet}</li>"
+                bullets_html += f"        <li>{bullet}</li>\n"
 
-        html += f"""
-        <div class="job">
-            <div class="job-header">
-                <span>{exp['job_title']} - {exp['company_name']}</span>
-                <span>{exp['start_date']} - {exp['end_date'] if exp['end_date'] else 'Present'}</span>
-            </div>
-            <ul>
-                {bullets_html}
-            </ul>
-        </div>
-        """
+        html += f"""    <div class="job">
+        <div class="company">{exp['company_name']}</div>
+        <div class="title">{exp['job_title']}</div>
+        <div class="dates">{exp['start_date']} - {exp['end_date'] if exp['end_date'] else 'Present'}</div>
+        <ul>
+{bullets_html}        </ul>
+    </div>
+"""
+
+    # Add education (now comes after experience)
+    html += "\n    <h2>Education</h2>\n"
+    for edu in profile.get('education', []):
+        html += f'    <div class="content edu-item"><strong>{edu["degree"]}</strong> - {edu["school"]} ({edu["year"]})</div>\n'
 
     # Add skills
-    html += "<h2>Skills</h2>"
-    html += "<p>" + ", ".join(profile.get('skills', [])) + "</p>"
+    html += "\n    <h2>Skills</h2>\n"
+    html += f'    <div class="content">{", ".join(profile.get("skills", []))}</div>\n'
 
-    html += "</body></html>"
+    html += "</body>\n</html>"
 
     return html
 
