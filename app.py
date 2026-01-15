@@ -242,18 +242,25 @@ def work_experience_page():
     experiences = db.get_work_experiences(st.session_state.user_id)
 
     # Add new experience section
+    # Clear form flag after rerun
+    if 'clear_exp_form' not in st.session_state:
+        st.session_state.clear_exp_form = False
+
     with st.expander("➕ Add New Work Experience", expanded=len(experiences) == 0):
-        with st.form("add_experience_form"):
+        # Use unique key that changes when we want to clear the form
+        form_key = f"add_experience_form_{st.session_state.get('exp_form_counter', 0)}"
+
+        with st.form(form_key, clear_on_submit=True):
             col1, col2 = st.columns(2)
 
             with col1:
-                company = st.text_input("Company Name")
-                job_title = st.text_input("Job Title")
+                company = st.text_input("Company Name", key=f"company_{form_key}")
+                job_title = st.text_input("Job Title", key=f"title_{form_key}")
 
             with col2:
-                start_date = st.text_input("Start Date", placeholder="e.g., January 2022")
-                is_current = st.checkbox("Current Position")
-                end_date = st.text_input("End Date", placeholder="e.g., December 2023", disabled=is_current)
+                start_date = st.text_input("Start Date", placeholder="e.g., January 2022", key=f"start_{form_key}")
+                is_current = st.checkbox("Current Position", key=f"current_{form_key}")
+                end_date = st.text_input("End Date", placeholder="e.g., December 2023", disabled=is_current, key=f"end_{form_key}")
 
             st.subheader("Accomplishment Bullets")
             st.info("Add 10-20 bullets describing your accomplishments. The AI will select the best ones for each resume.")
@@ -261,7 +268,8 @@ def work_experience_page():
             bullets_text = st.text_area(
                 "Bullets (one per line, optional bullet point symbols)",
                 height=200,
-                placeholder="Led cross-functional team of 12 to deliver $2M project 2 weeks ahead of schedule\nDeveloped strategic framework that increased client satisfaction by 40%\n..."
+                placeholder="Led cross-functional team of 12 to deliver $2M project 2 weeks ahead of schedule\nDeveloped strategic framework that increased client satisfaction by 40%\n...",
+                key=f"bullets_{form_key}"
             )
 
             submitted = st.form_submit_button("Add Work Experience", type="primary")
@@ -292,6 +300,8 @@ def work_experience_page():
                         db.add_bullets_bulk(exp_id, bullets)
 
                     st.session_state.experience_saved = f"Added {company} - {job_title}"
+                    # Increment counter to force form recreation with empty fields
+                    st.session_state.exp_form_counter = st.session_state.get('exp_form_counter', 0) + 1
                     st.rerun()
 
     # Display existing experiences
@@ -372,20 +382,24 @@ def target_jobs_page():
 
     # Add new job section
     with st.expander("➕ Add New Target Job", expanded=True):
-        with st.form("add_job_form"):
+        # Use unique key that changes when we want to clear the form
+        job_form_key = f"add_job_form_{st.session_state.get('job_form_counter', 0)}"
+
+        with st.form(job_form_key, clear_on_submit=True):
             col1, col2 = st.columns(2)
 
             with col1:
-                company = st.text_input("Company Name")
-                job_title = st.text_input("Job Title")
+                company = st.text_input("Company Name", key=f"job_company_{job_form_key}")
+                job_title = st.text_input("Job Title", key=f"job_title_{job_form_key}")
 
             with col2:
-                job_url = st.text_input("Job URL (optional)")
+                job_url = st.text_input("Job URL (optional)", key=f"job_url_{job_form_key}")
 
             job_description = st.text_area(
                 "Job Description",
                 height=200,
-                help="Paste the full job description here, or leave blank to scrape from URL"
+                help="Paste the full job description here, or leave blank to scrape from URL",
+                key=f"job_desc_{job_form_key}"
             )
 
             col_a, col_b = st.columns(2)
@@ -408,6 +422,8 @@ def target_jobs_page():
                         job_description
                     )
                     st.session_state.job_saved = f"Added {company} - {job_title}"
+                    # Increment counter to force form recreation with empty fields
+                    st.session_state.job_form_counter = st.session_state.get('job_form_counter', 0) + 1
                     st.rerun()
 
             if scrape:
@@ -426,6 +442,8 @@ def target_jobs_page():
                                 description
                             )
                             st.session_state.job_saved = f"Scraped and added job! ({len(description)} characters)"
+                            # Increment counter to force form recreation with empty fields
+                            st.session_state.job_form_counter = st.session_state.get('job_form_counter', 0) + 1
                             st.rerun()
                         else:
                             st.error("Failed to scrape job description. Please paste it manually.")
@@ -576,43 +594,25 @@ def generate_resume(job_id: int):
 
             # Generate PDF
             st.write("Converting to PDF...")
-            from playwright.sync_api import sync_playwright
-
             try:
-                with sync_playwright() as p:
-                    # Try chromium first, fallback to webkit if chromium fails
-                    try:
-                        browser = p.chromium.launch(
-                            headless=True,
-                            args=['--disable-dev-shm-usage', '--no-sandbox']
-                        )
-                    except Exception as chromium_error:
-                        # Fallback to webkit which is more reliable on some platforms
-                        st.info("Using webkit instead of chromium for PDF generation...")
-                        browser = p.webkit.launch(headless=True)
+                from xhtml2pdf import pisa
 
-                    page = browser.new_page()
-
-                    html_url = f'file:///{os.path.abspath(html_path).replace(os.sep, "/")}'
-                    page.goto(html_url)
-
-                    page.pdf(
-                        path=pdf_path,
-                        format='Letter',
-                        print_background=True,
-                        margin={
-                            'top': '0.5in',
-                            'right': '0.75in',
-                            'bottom': '0.5in',
-                            'left': '0.75in'
-                        }
+                # Open the PDF file
+                with open(pdf_path, "wb") as pdf_file:
+                    # Convert HTML to PDF
+                    pisa_status = pisa.CreatePDF(
+                        html_content,
+                        dest=pdf_file
                     )
 
-                    browser.close()
-                success = True
+                # Check if PDF was created successfully
+                success = not pisa_status.err
+
+                if not success:
+                    st.error("PDF generation encountered errors.")
             except Exception as pdf_error:
                 st.error(f"PDF generation error: {str(pdf_error)}")
-                st.error("Please contact administrator to verify Playwright browsers are installed correctly.")
+                st.error("Please contact administrator if this issue persists.")
                 success = False
 
             if success:
