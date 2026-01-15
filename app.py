@@ -9,8 +9,15 @@ import os
 from database import Database
 from web_scraper import scrape_job_description
 from llm_processor_web import ResumeOptimizer
-from document_processor import DocumentProcessor, generate_output_filename
 import config
+
+# Helper function for filename generation
+def generate_output_filename(company_name: str) -> str:
+    """Generate output filename"""
+    from datetime import datetime
+    date_str = datetime.now().strftime("%y%m%d")
+    clean_company = company_name.replace(" ", "_").replace("/", "-")
+    return f"Bianco_Resume_{clean_company}_{date_str}"
 
 # Page configuration
 st.set_page_config(
@@ -506,27 +513,49 @@ def generate_resume(job_id: int):
 
                 generated_bullets[exp_id] = selected_bullets
 
-            # Build HTML resume
-            template_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resume_template.html")
-            doc_processor = DocumentProcessor(template_path)
-
             # Create custom HTML with user's profile
             html_content = build_resume_html(profile, experiences, generated_bullets)
 
             # Save HTML
             output_filename = generate_output_filename(job['company_name'])
-            html_path = f"web_app/output/{output_filename}.html"
-            pdf_path = f"web_app/output/{output_filename}.pdf"
+            output_dir = "output"
+            os.makedirs(output_dir, exist_ok=True)
 
-            # Ensure output directory exists
-            os.makedirs("web_app/output", exist_ok=True)
+            html_path = os.path.join(output_dir, f"{output_filename}.html")
+            pdf_path = os.path.join(output_dir, f"{output_filename}.pdf")
 
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
 
             # Generate PDF
             st.write("Converting to PDF...")
-            success = doc_processor.convert_to_pdf(html_path, pdf_path)
+            from playwright.sync_api import sync_playwright
+
+            try:
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    page = browser.new_page()
+
+                    html_url = f'file:///{os.path.abspath(html_path).replace(os.sep, "/")}'
+                    page.goto(html_url)
+
+                    page.pdf(
+                        path=pdf_path,
+                        format='Letter',
+                        print_background=True,
+                        margin={
+                            'top': '0.5in',
+                            'right': '0.75in',
+                            'bottom': '0.5in',
+                            'left': '0.75in'
+                        }
+                    )
+
+                    browser.close()
+                success = True
+            except Exception as pdf_error:
+                st.error(f"PDF generation error: {str(pdf_error)}")
+                success = False
 
             if success:
                 # Save to database
@@ -635,7 +664,7 @@ def generated_resumes_page():
     else:
         for resume in resumes:
             with st.expander(f"📄 {resume['company_name']} - {resume['job_title']} (Created: {resume['created_at']})", expanded=False):
-                pdf_path = f"web_app/output/{resume['pdf_filename']}.pdf"
+                pdf_path = f"output/{resume['pdf_filename']}.pdf"
 
                 if os.path.exists(pdf_path):
                     with open(pdf_path, 'rb') as f:
