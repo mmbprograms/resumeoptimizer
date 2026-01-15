@@ -41,6 +41,19 @@ if 'username' not in st.session_state:
 if 'page' not in st.session_state:
     st.session_state.page = 'login'
 
+# Check if we have remembered credentials in query params or cache
+try:
+    # Try to get cached credentials from browser storage simulation
+    if hasattr(st, 'query_params'):
+        if 'remembered_user' in st.query_params:
+            remembered_username = st.query_params['remembered_user']
+            remembered_id = st.query_params['remembered_id']
+            if st.session_state.user_id is None:
+                st.session_state.user_id = int(remembered_id)
+                st.session_state.username = remembered_username
+except:
+    pass
+
 
 def login_page():
     """Login/Register page"""
@@ -53,6 +66,7 @@ def login_page():
         st.subheader("Login")
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
+        remember_me = st.checkbox("Remember me", value=True)
 
         if st.button("Login", type="primary"):
             user_id = db.authenticate_user(username, password)
@@ -60,9 +74,19 @@ def login_page():
                 st.session_state.user_id = user_id
                 st.session_state.username = username
                 st.session_state.page = 'dashboard'
+
+                # Store credentials for session persistence
+                if remember_me:
+                    try:
+                        st.query_params['remembered_user'] = username
+                        st.query_params['remembered_id'] = str(user_id)
+                    except:
+                        pass
+
+                st.success("✅ Login successful!")
                 st.rerun()
             else:
-                st.error("Invalid username or password")
+                st.error("❌ Invalid username or password")
 
     with tab2:
         st.subheader("Register New User")
@@ -108,6 +132,14 @@ def dashboard():
             st.session_state.user_id = None
             st.session_state.username = None
             st.session_state.page = 'login'
+            # Clear remembered credentials
+            try:
+                if 'remembered_user' in st.query_params:
+                    del st.query_params['remembered_user']
+                if 'remembered_id' in st.query_params:
+                    del st.query_params['remembered_id']
+            except:
+                pass
             st.rerun()
 
     # Main content
@@ -126,6 +158,11 @@ def dashboard():
 def profile_page():
     """Profile management page"""
     st.title("My Profile")
+
+    # Show success message if profile was just saved
+    if 'profile_saved' in st.session_state and st.session_state.profile_saved:
+        st.success("✅ Profile updated successfully!")
+        st.session_state.profile_saved = False
 
     profile = db.get_profile(st.session_state.user_id)
 
@@ -188,13 +225,18 @@ def profile_page():
             }
 
             db.update_profile(st.session_state.user_id, profile_data)
-            st.success("Profile updated successfully!")
+            st.session_state.profile_saved = True
             st.rerun()
 
 
 def work_experience_page():
     """Work experience management page"""
     st.title("Manage Work Experience")
+
+    # Show success message if experience was just added
+    if 'experience_saved' in st.session_state and st.session_state.experience_saved:
+        st.success(f"✅ {st.session_state.experience_saved}")
+        st.session_state.experience_saved = False
 
     # Get existing work experiences
     experiences = db.get_work_experiences(st.session_state.user_id)
@@ -249,7 +291,7 @@ def work_experience_page():
 
                         db.add_bullets_bulk(exp_id, bullets)
 
-                    st.success(f"Added {company} - {job_title}")
+                    st.session_state.experience_saved = f"Added {company} - {job_title}"
                     st.rerun()
 
     # Display existing experiences
@@ -323,6 +365,11 @@ def target_jobs_page():
     """Target jobs management page"""
     st.title("Manage Target Jobs")
 
+    # Show success message if job was just added
+    if 'job_saved' in st.session_state and st.session_state.job_saved:
+        st.success(f"✅ {st.session_state.job_saved}")
+        st.session_state.job_saved = False
+
     # Add new job section
     with st.expander("➕ Add New Target Job", expanded=True):
         with st.form("add_job_form"):
@@ -360,7 +407,7 @@ def target_jobs_page():
                         job_url,
                         job_description
                     )
-                    st.success(f"Added {company} - {job_title}")
+                    st.session_state.job_saved = f"Added {company} - {job_title}"
                     st.rerun()
 
             if scrape:
@@ -378,7 +425,7 @@ def target_jobs_page():
                                 job_url,
                                 description
                             )
-                            st.success(f"Scraped and added job! ({len(description)} characters)")
+                            st.session_state.job_saved = f"Scraped and added job! ({len(description)} characters)"
                             st.rerun()
                         else:
                             st.error("Failed to scrape job description. Please paste it manually.")
@@ -533,7 +580,17 @@ def generate_resume(job_id: int):
 
             try:
                 with sync_playwright() as p:
-                    browser = p.chromium.launch(headless=True)
+                    # Try chromium first, fallback to webkit if chromium fails
+                    try:
+                        browser = p.chromium.launch(
+                            headless=True,
+                            args=['--disable-dev-shm-usage', '--no-sandbox']
+                        )
+                    except Exception as chromium_error:
+                        # Fallback to webkit which is more reliable on some platforms
+                        st.info("Using webkit instead of chromium for PDF generation...")
+                        browser = p.webkit.launch(headless=True)
+
                     page = browser.new_page()
 
                     html_url = f'file:///{os.path.abspath(html_path).replace(os.sep, "/")}'
@@ -555,6 +612,7 @@ def generate_resume(job_id: int):
                 success = True
             except Exception as pdf_error:
                 st.error(f"PDF generation error: {str(pdf_error)}")
+                st.error("Please contact administrator to verify Playwright browsers are installed correctly.")
                 success = False
 
             if success:

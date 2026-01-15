@@ -66,7 +66,7 @@ git push -u origin main
    - **Branch**: `main`
    - **Root Directory**: `.` (leave blank or use dot for current directory)
    - **Runtime**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt && playwright install chromium`
+   - **Build Command**: `pip install -r requirements.txt && playwright install chromium chromium-headless-shell webkit`
    - **Start Command**: `streamlit run app.py --server.port=$PORT --server.address=0.0.0.0`
 
 ### Step 3: Set Environment Variables
