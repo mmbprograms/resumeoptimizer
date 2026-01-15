@@ -64,9 +64,9 @@ git push -u origin main
    - **Name**: `resume-optimizer` (or your choice)
    - **Region**: Choose closest to you
    - **Branch**: `main`
-   - **Root Directory**: `web_app`
+   - **Root Directory**: `.` (leave blank or use dot for current directory)
    - **Runtime**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt && python -m playwright install chromium && python -m playwright install-deps`
+   - **Build Command**: `pip install -r requirements.txt && playwright install chromium`
    - **Start Command**: `streamlit run app.py --server.port=$PORT --server.address=0.0.0.0`
 
 ### Step 3: Set Environment Variables

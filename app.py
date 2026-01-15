@@ -8,7 +8,7 @@ import os
 # Local imports
 from database import Database
 from web_scraper import scrape_job_description
-from llm_processor import ResumeOptimizer
+from llm_processor_web import ResumeOptimizer
 from document_processor import DocumentProcessor, generate_output_filename
 import config
 
