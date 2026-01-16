@@ -116,6 +116,15 @@ def dashboard():
         st.title(f"👤 {st.session_state.username}")
 
         user_info = db.get_user_info(st.session_state.user_id)
+
+        # Safety check - if user_info is None, session is invalid
+        if user_info is None:
+            st.error("Session invalid. Please login again.")
+            st.session_state.user_id = None
+            st.session_state.username = None
+            st.rerun()
+            return
+
         st.metric("Resumes Generated", f"{user_info['resume_count']}/{user_info['resume_limit']}")
 
         st.markdown("---")
@@ -521,6 +530,11 @@ def generate_resumes_page():
         return
 
     user_info = db.get_user_info(st.session_state.user_id)
+
+    if user_info is None:
+        st.error("User session invalid. Please login again.")
+        return
+
     st.info(f"Resumes remaining: {user_info['resume_limit'] - user_info['resume_count']}")
 
     # Select job
@@ -537,7 +551,7 @@ def generate_resumes_page():
         st.rerun()
 
     # Show review/edit interface if we're in the generation process
-    if 'generation_stage' in st.session_state and st.session_state.generation_stage in ['review', 'finalizing']:
+    if 'generation_stage' in st.session_state and st.session_state.generation_stage in ['generating', 'review', 'finalizing']:
         show_review_interface()
 
 
